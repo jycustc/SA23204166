@@ -1,0 +1,199 @@
+---
+title: "SA23204166function"
+author: "By SA23204166金亦成"
+date: "2023-12-05"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{SA23204166function}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+library(SA23204166)
+library(igraph)
+library(microbenchmark)
+library(Rcpp)
+```
+## 函数1：RS_PA
+
+```{r, eval=FALSE}
+RS_PA <- function(X,T,a) {
+  n=dim(X)[1]
+  sig=svd(X)$d
+  sig0=matrix(rep(0,n*T),nrow = T)
+  for (t in 1:T) {
+    mat=matrix(2*rbinom(n^2,1,0.5)-1,nrow = n)
+    upper_triangle <- upper.tri(mat)
+    s_m <- matrix(0, nrow = nrow(mat), ncol = ncol(mat))
+    s_m[upper_triangle] <- mat[upper_triangle]
+    s_m[lower.tri(s_m)] <- t(s_m)[lower.tri(s_m)]
+    sig0[t,]=svd(X*s_m)$d
+  }
+  sig1=apply(sig0, 2, quantile, probs = a)
+  k=which(sig < sig1)[1]-1
+  embedding_mat=svd(X)$u[,c(1:k)]
+  return(list(k=k,embedding_mat=embedding_mat))
+}
+```
+
+### 函数1背景：
+
+平行分析（PA）是一种选取主成分个数的方法，可以通过以下几个步骤来完成：首先，生成多组随机数据的矩阵，这些矩阵和真实的数据矩阵要有相同的变量个数和被试的个数。然后，求出这组随机数据矩阵的特征值，并计算这些特征值的上$\alpha$分位数。最后，通过比较真实数据中特征值的碎石图和这组随机矩阵的平均特征值的曲线，我们可以找到两条特征值曲线的交点，根据交点的位置，我们就可以确定要抽取主成分的绝对最大数目。如果真实数据的特征值落在随机矩阵的平均特征值曲线之上，则保留这些主成分；反之，则舍弃这些主成分。
+
+为了解决具有异质噪声的数据的主成分个数选取问题，Hong(2020)中提出了随机符号翻转平行分析的方法，他将数据矩阵的每个元素进行了随机符号翻转，得到新的数据，他说明在此操作之下，数据中信号的部分被完全破坏掉同时误差的部分仍保留，因此原先数据比后得到数据主成分大的部分是该保留的主成分，由此合理的选取了具有异质噪声的数据中主成分的个数。但是给文章中限制了数据中的误差部分的范数恒定的条件，但是一般的随机图数据没法保证该条件。在我的毕业设计中，我和韩潇老师通过理论证明，发现这种方法也对于一般的随机图，只要随机图中的每个信号的信号强度随着节点个数n的变化保持在同一量级即可，且通过这种方式求得的显著的特征值的个数可以被视为是随机图中的社区个数。
+
+由此我构造了一个R函数RS_PA，只要输入一个随机图的邻接矩阵，通过该函数即可通过上述的方法识别出该随机图的显著的特征值的个数，也就是给出该随机图中蕴含的潜在的社区个数。
+
+### 函数1说明：
+#### 输入：
+- X:数据随机图的邻接矩阵,n个节点,则输入一个n行n列的0-1邻接矩阵
+- T:进行重复Random Signflips的试验次数
+- a:平行分析所采用的分位数
+
+#### 输出：
+- k:通过上述背景中Random Signflip平行分析得到的随机图邻接矩阵的显著特征值的个数，即随机图中潜在的社区个数
+- embedding_mat:通过上述方法获得潜在社区数k之后，通过PCA取前k列特征作为每个节点的嵌入向量得到的嵌入矩阵
+
+### 函数1例子：
+#### 模拟数据：
+- 创建一个ER随机图邻接矩阵sim_data，则理论社区个数k=1，取大小为50个节点，相连概率p为0.2的ER随机图,取T为300，a为0.95
+```{r}
+set.seed(0)
+mat=matrix(rbinom(50^2,1,0.2),ncol=50)
+upper_triangle <- upper.tri(mat)
+sim_data <- matrix(0, nrow = nrow(mat), ncol = ncol(mat))
+sim_data[upper_triangle] <- mat[upper_triangle]
+sim_data[lower.tri(sim_data)] <- t(sim_data)[lower.tri(sim_data)]
+```
+- 将ER随机图邻接矩阵sim_data作用上RS_PA，观察得到的k社区个数也为1
+```{r}
+print(RS_PA(sim_data,300,0.95))
+```
+
+
+#### 真实数据：
+- Dolphins dataset:该数据集包含了由Lusseau等人（2003年）编制的，位于新西兰Doubtful Sound的一个社群中的62只海豚之间频繁关联的无向社交网络。数据类型为igraph中图。结果k为3.
+```{r}
+data(dolphins)
+dolphins_mat=get.adjacency(dolphins,sparse = FALSE)
+RS_PA(dolphins_mat,300,0.95)
+```
+- Football dataset:该数据集包含了由M.Girvan和M.Newman编制的，涵盖了2000年秋季常规赛季美国大学分区IA间橄榄球比赛的网络。数据类型为igraph中图。结果k为11.
+```{r}
+data(football)
+football_mat=get.adjacency(football,sparse = FALSE)
+RS_PA(football_mat,300,0.95)
+```
+- Karate dataset:该数据集包含了由Wayne Zachary于1977年描述的美国大学一个空手道俱乐部的34名成员之间的友谊网络。数据类型为igraph中图。结果k为2.
+```{r}
+data(karate)
+karate_mat=get.adjacency(karate,sparse = FALSE)
+RS_PA(karate_mat,300,0.95)
+```
+- Polbooks dataset:关于美国政治的图书网络，节点表示由在线书商Amazon.com销售的有关美国政治的图书。边表示相同购买者频繁共同购买书籍，如在Amazon上的“购买了此书的顾客也购买了这些其他书籍”功能中所示。数据类型为igraph中图。结果k为2.
+```{r}
+data(polbooks)
+polbooks_mat=get.adjacency(polbooks,sparse = FALSE)
+RS_PA(polbooks_mat,300,0.95)
+```
+
+## 函数2：CommunityC
+
+```{r, eval=FALSE}
+#include <Rcpp.h>
+using namespace Rcpp;
+// [[Rcpp::export]]
+List CommunityC(NumericMatrix embedding_mat, int k, int iter, CharacterVector s) {
+  int n = embedding_mat.nrow();
+  int p = embedding_mat.ncol();
+  IntegerVector seq = seq_len(n);
+  NumericVector x=as<NumericVector>(seq);
+  NumericVector ind=sample(x,k,false,R_NilValue);
+  NumericMatrix centroids(k, p);
+  for (int i = 0; i < k; i++) {
+    centroids(i, _) = embedding_mat(ind[i], _);
+  }
+  IntegerVector assignments(n);
+  for (int iteration = 0; iteration < iter; iteration++) {
+    NumericMatrix distances(n, k);
+    for (int i = 0; i < k; i++) {
+      for (int j = 0; j < n; j++) {
+        distances(j, i) = euclidean_distance(embedding_mat(j, _), centroids(i, _));
+      }
+    }
+    for (int j = 0; j < n; ++j) {
+      assignments[j] = which_min(distances(j, _));
+    }
+    for (int i = 0; i < k; ++i) {
+      NumericVector centroid_update(p, 0.0);
+      int count = 0;
+      for (int j = 0; j < n; ++j) {
+        if (assignments[j] == i) {
+          for (int l = 0; l < p; ++l) {
+            centroid_update[l] += embedding_mat(j, l);
+          }
+          count++;
+        }
+      }
+      if (count > 0) {
+        for (int l = 0; l < p; ++l) {
+          centroids(i, l) = centroid_update[l] / count;
+        }
+      }
+    }
+  }
+  List result(k);
+  for (int i = 0; i < k; ++i) {
+    CharacterVector group_members = s[assignments == i];
+    result[i] = group_members;
+  }
+  return result;
+}
+```
+
+
+### 函数2背景：
+
+通过上面的RS_PA函数我们对于一个随机图可以估计它潜在的社区数，并且我们可以得到每个节点在低维空间的嵌入向量所构成的嵌入矩阵，所以通过对嵌入向量进行k-means聚类算法，我们可以得到随机图的社区检测结果，即将多有在同一社区的节点归类在一起，我们构造函数CommunityC来实现上述目的，输出为在同一社区的节点放在一起最终得到的列表，列表中每个元素为同一社区节点的名称构成的字符串数组
+
+### 函数2说明：
+#### 输入：
+- k:通过上述背景中Random Signflip平行分析得到的随机图邻接矩阵的显著特征值的个数，即随机图中潜在的社区个数
+- embedding_mat:通过上述方法获得潜在社区数k之后，通过PCA取前k列特征作为每个节点的嵌入向量得到的嵌入矩阵
+- iter:k-means算法迭代的次数
+- s:每个节点对应的名称构成的字符串数组
+
+#### 输出：
+- result:通过上述背景中Random Signflip平行分析得到的随机图邻接矩阵的显著特征值的个数k，以及利用k-means算法进行聚类实现社区检验，将结果中在同一社区的节点放在一起最终得到的列表，列表中每个元素为同一社区节点的名称构成的字符串数组
+
+
+### 函数2例子：
+#### 模拟数据：
+- 创建一个embedding_mat，取定embedding_mat为n=100行，p=3列，取节点名字为node+编号，取定社区数为3，迭代次数为50
+```{r}
+set.seed(0)
+n <- 100
+p <- 3
+embedding_mat <- matrix(rnorm(n * p), nrow = n, ncol = p)
+s <- paste0("node", 1:n)
+k <- 3
+iter <- 50
+CommunityC(embedding_mat, k, iter, s)
+```
+
+
+#### 真实数据：
+- Dolphins dataset:
+```{r}
+data(dolphins)
+dolphins_mat=get.adjacency(dolphins,sparse = FALSE)
+s=get.vertex.attribute(dolphins)$label
+k=RS_PA(dolphins_mat,300,0.95)$k
+embedding_mat=RS_PA(dolphins_mat,300,0.95)$embedding_mat
+iter <- 50
+CommunityC(embedding_mat, k, iter, s)
+```

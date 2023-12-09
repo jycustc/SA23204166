@@ -1,0 +1,17 @@
+Package: SA23204166
+Type: Package
+Title: The Statistical Computing project of Jin Yicheng SA23204166
+Version: 1.0
+Date: 2023-12-03
+Author: Jin Yicheng
+Maintainer: Jin Yicheng <jyc2002@mail.ustc.edu.cn>
+Description: R and Rcpp function are included in this package for the Statistical Computing project of Jin Yicheng SA23204166.
+License: GPL (>= 2)
+Imports: Rcpp, microbenchmark, stats, boot, bootstrap,DAAG, coda,igraph
+Suggests: knitr, rmarkdown
+LinkingTo: Rcpp
+RoxygenNote: 7.2.3
+VignetteBuilder: knitr
+Encoding: UTF-8
+URL: http://github.com/jycustc/SA23204166
+BugReports: http://github.com/jycustc/SA23204166/issues
